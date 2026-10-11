@@ -1,0 +1,10 @@
+{
+  "name": "html-locker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PC·휴대폰에서 HTML 파일을 올리고 스마트폰에서 바로 여는 Netlify 앱",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

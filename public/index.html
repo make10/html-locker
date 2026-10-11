@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f6feb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>HTML 보관함</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{--bg:#f4f6f9;--card:#fff;--ink:#1b2430;--sub:#6b7686;--line:#e2e6ec;--pri:#1f6feb;--danger:#d93a3a}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f141a;--card:#18202a;--ink:#e8edf3;--sub:#93a0b0;--line:#2a3542;--pri:#4c8dff;--danger:#ff6161}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:22px;margin:4px 0 4px}
+  .sub{color:var(--sub);font-size:14px;margin-bottom:16px}
+  .drop{border:2px dashed var(--line);border-radius:14px;background:var(--card);padding:28px 16px;text-align:center;cursor:pointer;transition:.15s}
+  .drop.on{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 8%,var(--card))}
+  .drop b{display:block;font-size:17px;margin-bottom:6px}
+  .drop span{color:var(--sub);font-size:13px}
+  .bar{display:flex;gap:8px;margin:16px 0 10px}
+  .bar input{flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:15px}
+  button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 12px;cursor:pointer;font-size:14px}
+  button.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+  button.del{color:var(--danger)}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+  .name{font-weight:600;word-break:break-all}
+  .meta{color:var(--sub);font-size:12px;margin:3px 0 10px}
+  .acts{display:flex;flex-wrap:wrap;gap:6px}
+  .empty{text-align:center;color:var(--sub);padding:30px 0}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;transition:.2s;pointer-events:none}
+  .toast.show{opacity:.95}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px}
+  .modal.show{display:flex}
+  .box{background:var(--card);border-radius:14px;padding:20px;max-width:320px;width:100%;text-align:center}
+  #qr{display:inline-block;background:#fff;padding:10px;border-radius:8px;margin:10px 0}
+  .key{font-size:13px;color:var(--sub);margin-top:22px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .key input{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);width:150px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📂 HTML 보관함</h1>
+  <div class="sub">PC나 휴대폰에서 HTML 파일을 올리면, 어디서든 링크로 바로 열 수 있습니다.</div>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept=".html,.htm,text/html" multiple hidden>
+    <b>＋ HTML 파일 올리기</b>
+    <span>눌러서 선택하거나, PC에서는 여기로 끌어다 놓으세요 (여러 개 가능)</span>
+  </label>
+
+  <div class="bar">
+    <input id="q" placeholder="파일 이름 검색">
+    <button onclick="load()">새로고침</button>
+  </div>
+
+  <div id="list"><div class="empty">불러오는 중…</div></div>
+
+  <div class="key">🔑 접근 키
+    <input id="key" type="password" placeholder="설정한 경우만 입력">
+    <button onclick="saveKey()">저장</button>
+  </div>
+</div>
+
+<div class="modal" id="modal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="box">
+    <b id="qrName"></b>
+    <div id="qr"></div>
+    <div style="font-size:13px;color:var(--sub)">휴대폰 카메라로 찍으면 바로 열립니다</div>
+    <p><button onclick="document.getElementById('modal').classList.remove('show')">닫기</button></p>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let files = [];
+
+function getKey(){ try{ return localStorage.getItem("htmlbox-key") || ""; }catch(e){ return ""; } }
+function saveKey(){ try{ localStorage.setItem("htmlbox-key", $("key").value.trim()); }catch(e){} toast("저장했습니다"); load(); }
+$("key").value = getKey();
+
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2000); }
+
+async function api(method, body, qs=""){
+  const res = await fetch("/api/files"+qs, {
+    method, headers:{ "content-type":"application/json", "x-access-key":getKey() },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error || ("오류 "+res.status));
+  return data;
+}
+
+const linkOf = (id) => location.origin + "/v/" + id;
+const fmtSize = (n) => n>1048576 ? (n/1048576).toFixed(1)+" MB" : Math.max(1,Math.round(n/1024))+" KB";
+const fmtDate = (t) => t ? new Date(t).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "";
+const esc = (s) => String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+async function load(){
+  try{ files = await api("GET"); render(); }
+  catch(e){ $("list").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+function render(){
+  const q = $("q").value.trim().toLowerCase();
+  const rows = files.filter(f => !q || (f.name||"").toLowerCase().includes(q));
+  if(!rows.length){ $("list").innerHTML = `<div class="empty">${files.length?"검색 결과가 없습니다":"아직 올린 파일이 없습니다"}</div>`; return; }
+  $("list").innerHTML = rows.map(f => `
+    <div class="item">
+      <div class="name">${esc(f.name)}</div>
+      <div class="meta">${fmtSize(f.size||0)} · ${fmtDate(f.updated)}</div>
+      <div class="acts">
+        <button class="pri" onclick="window.open('${linkOf(f.id)}','_blank')">열기</button>
+        <button onclick="copyLink('${f.id}')">링크 복사</button>
+        <button onclick="share('${f.id}')">공유</button>
+        <button onclick="showQR('${f.id}')">QR</button>
+        <button class="del" onclick="del('${f.id}')">삭제</button>
+      </div>
+    </div>`).join("");
+}
+$("q").addEventListener("input", render);
+
+async function upload(list){
+  const html = [...list].filter(f => /\.html?$/i.test(f.name));
+  if(!html.length){ toast("HTML 파일만 올릴 수 있습니다"); return; }
+  for(const f of html){
+    toast(`올리는 중… ${f.name}`);
+    try{
+      const r = await api("POST", { name:f.name, content: await f.text() });
+      toast(r.updated ? `갱신됨: ${f.name}` : `올림: ${f.name}`);
+    }catch(e){ toast(`${f.name}: ${e.message}`); }
+  }
+  load();
+}
+$("file").addEventListener("change", e => { upload(e.target.files); e.target.value=""; });
+const drop = $("drop");
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("on"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("on"); }));
+drop.addEventListener("drop", e => upload(e.dataTransfer.files));
+
+async function copyLink(id){
+  try{ await navigator.clipboard.writeText(linkOf(id)); toast("링크를 복사했습니다"); }
+  catch(e){ prompt("아래 링크를 복사하세요", linkOf(id)); }
+}
+async function share(id){
+  const f = files.find(x=>x.id===id);
+  if(navigator.share){ try{ await navigator.share({ title:f.name, url:linkOf(id) }); }catch(e){} }
+  else copyLink(id);
+}
+function showQR(id){
+  const f = files.find(x=>x.id===id);
+  $("qrName").textContent = f.name;
+  $("qr").innerHTML = "";
+  new QRCode($("qr"), { text: linkOf(id), width: 200, height: 200 });
+  $("modal").classList.add("show");
+}
+async function del(id){
+  const f = files.find(x=>x.id===id);
+  if(!confirm(`"${f.name}" 을(를) 삭제할까요? 링크도 더 이상 열리지 않습니다.`)) return;
+  try{ await api("DELETE", null, "?id="+id); toast("삭제했습니다"); load(); }
+  catch(e){ toast(e.message); }
+}
+
+load();
+</script>
+</body>
+</html>
